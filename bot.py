@@ -6,8 +6,10 @@ import os
 import requests
 import json
 import random
+import re
+from keep_alive import keep_alive
 
-# Load environment variables
+# Load environment variables from .env file
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -15,20 +17,22 @@ OMDB_API_KEY = os.getenv("OMDB_API_KEY")
 
 MODEL = "mistralai/mistral-7b-instruct"
 
+# Bot setup
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree  # For slash commands
+tree = bot.tree  # Slash command handler
 
-# -------------------- APIs -------------------- #
+# API Endpoints
 JIKAN_URL = "https://api.jikan.moe/v4/anime?q={query}&limit=1"
 BOOKS_URL = "https://www.googleapis.com/books/v1/volumes?q={query}"
 OMDB_URL = "http://www.omdbapi.com/?apikey={apikey}&t={title}"
 
+# State storage
 last_replies = {}
 trivia_answers = {}
 
-# -------------------- OpenRouter Chat Completion -------------------- #
+# Query OpenRouter API
 def query_openrouter(prompt, max_tokens=800):
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -46,13 +50,15 @@ def query_openrouter(prompt, max_tokens=800):
         "max_tokens": max_tokens,
         "temperature": 0.7
     }
-    res = requests.post(url, headers=headers, json=payload, timeout=10)
-    if res.status_code == 200:
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=10)
+        res.raise_for_status()
         return res.json()["choices"][0]["message"]["content"]
-    else:
-        print(f"OpenRouter Error {res.status_code}: {res.text}")
+    except Exception as e:
+        print(f"OpenRouter Error: {e}")
         return "⚠️ Something went wrong while fetching a reply."
 
+# Split text into smaller chunks
 def split_text(text, max_length=1800):
     chunks = []
     while len(text) > max_length:
@@ -65,14 +71,16 @@ def split_text(text, max_length=1800):
         chunks.append(text)
     return chunks
 
+# When bot is ready
 @bot.event
 async def on_ready():
     try:
         synced = await tree.sync()
-        print(f"🤖 Bot connected as {bot.user} | Synced {len(synced)} slash command(s).")
+        print(f"✅ Logged in as {bot.user} | Synced {len(synced)} slash command(s).")
     except Exception as e:
         print(f"❌ Slash command sync failed: {e}")
 
+# Message handler (mentions + trivia + follow-ups)
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
@@ -81,6 +89,7 @@ async def on_message(message):
     user_id = message.author.id
     content = message.content.strip().lower()
 
+    # "Continue" responses
     if user_id in last_replies and content in ["yes", "continue", "go on", "more"]:
         remaining_chunks = last_replies[user_id]
         if remaining_chunks:
@@ -92,6 +101,7 @@ async def on_message(message):
                 del last_replies[user_id]
         return
 
+    # Trivia answer handling
     if user_id in trivia_answers:
         if content == trivia_answers[user_id].lower():
             await message.channel.send("✅ Correct answer!")
@@ -100,8 +110,13 @@ async def on_message(message):
         del trivia_answers[user_id]
         return
 
+    # Bot mention handling
     if bot.user.mentioned_in(message):
-        prompt = message.content.replace(f"<@{bot.user.id}>", "").strip()
+        # Clean up the prompt by removing bot mention (<@ID> or <@!ID>)
+        prompt = re.sub(rf"<@!?{bot.user.id}>", "", message.content).strip()
+        if not prompt:
+            await message.channel.send(f"👋 Hello {message.author.mention}, ask me anything or try a slash command like `/anime`!")
+            return
         async with message.channel.typing():
             full_reply = query_openrouter(prompt)
             chunks = split_text(full_reply)
@@ -112,20 +127,17 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# -------------------- Slash Commands -------------------- #
+# --- Slash Commands ---
+
 @tree.command(name="anime", description="Get info about an anime")
 @app_commands.describe(name="The name of the anime")
 async def anime_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
     try:
         res = requests.get(JIKAN_URL.format(query=name), timeout=5)
-        if res.status_code != 200:
-            return await interaction.followup.send("⚠️ Couldn't fetch anime info.")
-
         data = res.json()
-        if not data.get("data"):
-            return await interaction.followup.send("❌ No anime found with that name.")
-
+        if res.status_code != 200 or not data.get("data"):
+            return await interaction.followup.send("❌ No anime found.")
         anime = data["data"][0]
         embed = discord.Embed(title=anime["title"], url=anime["url"], description=anime["synopsis"][:500] + "...", color=0x00ffcc)
         embed.add_field(name="Type", value=anime["type"] or "N/A", inline=True)
@@ -133,7 +145,7 @@ async def anime_command(interaction: discord.Interaction, name: str):
         embed.add_field(name="Score", value=str(anime.get("score", "N/A")), inline=True)
         embed.set_image(url=anime["images"]["jpg"]["image_url"])
         await interaction.followup.send(embed=embed)
-    except Exception as e:
+    except Exception:
         await interaction.followup.send("❌ An error occurred.")
 
 @tree.command(name="book", description="Get info about a book")
@@ -142,15 +154,13 @@ async def book_command(interaction: discord.Interaction, name: str):
     await interaction.response.defer()
     try:
         res = requests.get(BOOKS_URL.format(query=name), timeout=5)
-        if res.status_code != 200:
-            return await interaction.followup.send("⚠️ Couldn't fetch book info.")
-
         data = res.json()
-        if not data.get("items"):
-            return await interaction.followup.send("❌ No book found with that name.")
-
+        if res.status_code != 200 or not data.get("items"):
+            return await interaction.followup.send("❌ No book found.")
         book = data["items"][0]["volumeInfo"]
-        embed = discord.Embed(title=book.get("title", "Unknown Title"), description=book.get("description", "No description available."), color=0x663399)
+        embed = discord.Embed(title=book.get("title", "Unknown Title"),
+                              description=book.get("description", "No description available."),
+                              color=0x663399)
         embed.add_field(name="Author(s)", value=", ".join(book.get("authors", ["Unknown"])), inline=True)
         embed.add_field(name="Rating", value=str(book.get("averageRating", "N/A")), inline=True)
         embed.add_field(name="Published", value=str(book.get("publishedDate", "N/A")), inline=True)
@@ -166,14 +176,12 @@ async def movie_command(interaction: discord.Interaction, title: str):
     await interaction.response.defer()
     try:
         res = requests.get(OMDB_URL.format(apikey=OMDB_API_KEY, title=title), timeout=5)
-        if res.status_code != 200:
-            return await interaction.followup.send("⚠️ Couldn't fetch movie info.")
-
         data = res.json()
-        if data.get("Response") != "True":
-            return await interaction.followup.send("❌ No movie found with that name.")
-
-        embed = discord.Embed(title=data.get("Title", "Unknown Title"), description=data.get("Plot", "No plot available."), color=0xff4444)
+        if res.status_code != 200 or data.get("Response") != "True":
+            return await interaction.followup.send("❌ No movie found.")
+        embed = discord.Embed(title=data.get("Title", "Unknown Title"),
+                              description=data.get("Plot", "No plot available."),
+                              color=0xff4444)
         embed.add_field(name="Director", value=data.get("Director", "Unknown"), inline=True)
         embed.add_field(name="Year", value=data.get("Year", "N/A"), inline=True)
         embed.add_field(name="IMDb Rating", value=data.get("imdbRating", "N/A"), inline=True)
@@ -193,12 +201,9 @@ async def fact_command(interaction: discord.Interaction):
             return await interaction.followup.send(f"🧠 {data.get('text')}")
     except Exception:
         pass
-
     fallback = [
-        "Honey never spoils.",
-        "Octopuses have three hearts.",
-        "Bananas are berries.",
-        "Cats have fewer toes on their back paws."
+        "Honey never spoils.", "Octopuses have three hearts.",
+        "Bananas are berries.", "Cats have fewer toes on their back paws."
     ]
     await interaction.followup.send(f"🧠 {random.choice(fallback)}")
 
@@ -210,7 +215,6 @@ async def define_command(interaction: discord.Interaction, word: str):
         res = requests.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=5)
         if res.status_code != 200:
             return await interaction.followup.send("❌ Couldn’t find that word.")
-
         data = res.json()[0]
         meaning = data["meanings"][0]["definitions"][0]["definition"]
         example = data["meanings"][0]["definitions"][0].get("example", "No example available.")
@@ -225,17 +229,12 @@ async def trivia_command(interaction: discord.Interaction):
     await interaction.response.defer()
     try:
         res = requests.get("https://opentdb.com/api.php?amount=1&type=multiple", timeout=5)
-        if res.status_code != 200:
-            return await interaction.followup.send("❌ Failed to fetch trivia question.")
-
         q = res.json()['results'][0]
         question = q['question']
         correct = q['correct_answer']
         options = q['incorrect_answers'] + [correct]
         random.shuffle(options)
-
         trivia_answers[interaction.user.id] = correct
-
         embed = discord.Embed(title="Trivia Time!", description=question, color=0x3498db)
         for i, opt in enumerate(options):
             embed.add_field(name=f"Option {i+1}", value=opt, inline=False)
@@ -253,4 +252,6 @@ async def would_you_rather_command(interaction: discord.Interaction):
     ]
     await interaction.response.send_message(random.choice(questions))
 
+# Start web server and bot
+keep_alive()
 bot.run(DISCORD_TOKEN)
