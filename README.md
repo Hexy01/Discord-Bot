@@ -36,6 +36,13 @@ A feature-rich Discord bot built using **discord.py**, powered by the **OpenRout
   
 ---
 
+| Variable             | Description                                              |
+| -------------------- | -------------------------------------------------------- |
+| `DISCORD_TOKEN`      | Your bot token from Discord Developer Portal             |
+| `OPENROUTER_API_KEY` | OpenRouter API key for LLM completion                    |
+| `OMDB_API_KEY`       | API key from [OMDb](https://www.omdbapi.com/apikey.aspx) |
+
+---
 ## ⚙️ Setup
 
 ### 1. Clone the Repository
