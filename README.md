@@ -1,23 +1,39 @@
 # Tsumi-Bot🤖
 
 A feature-rich Discord bot built using **discord.py**, powered by the **OpenRouter AI API**, and packed with interactive slash commands for anime, movies, books, trivia, fun facts, dictionary definitions, and more!
+- 💬 Intelligent replies when mentioned
+- 🔍 Slash commands for anime, books, movies, trivia, definitions, and more
+- 📚 API integrations with Jikan (MyAnimeList), Google Books, OMDb, and more
+- 🔄 24/7 uptime using Replit + UptimeRobot keep-alive trick
+- 🎲 Fun responses like "Would You Rather" and trivia questions
+  
+---
+
+## 🚀 Features
+
+| Feature          | Description                                                |
+|------------------|------------------------------------------------------------|
+| `@mention` reply | Tsumi responds smartly when mentioned in any channel       |
+| `/anime`         | Search anime info using the Jikan API                      |
+| `/book`          | Get book details using Google Books API                    |
+| `/movie`         | Fetch movie info using the OMDb API                        |
+| `/define`        | Define a word using Free Dictionary API                    |
+| `/trivia`        | Fun random trivia question                                 |
+| `/wouldyourather`| Random "Would You Rather" question                         |
+| Slash commands   | Built with Discord’s new `app_commands` interface          |
 
 ---
 
-## 🌟 Features
+## 🧠 Powered By
 
-- 🧠 AI Assistant (OpenRouter API – Mistral-7B)
-- 🔍 Slash commands for:
-  - `/anime` – Search anime info via Jikan API
-  - `/movie` – Get movie info using OMDB API
-  - `/book` – Fetch book details from Google Books
-  - `/fact` – Get random fun facts (via uselessfacts API)
-  - `/define` – Look up word definitions
-  - `/trivia` – Get random trivia questions
-  - `/wouldyourather` – Fun "Would You Rather" questions
-- 💬 Mention-based chat
-- ✅ Intelligent caching for multi-part replies and trivia answers
+- **OpenRouter.ai** – for chat completions
+- **Jikan API** – for anime data
+- **Google Books API** – for book info
+- **OMDb API** – for movies
+- **Dictionary API** – for word definitions
+- **Replit** + **UptimeRobot** – for 24/7 hosting
 
+  
 ---
 
 ## ⚙️ Setup
